@@ -1,0 +1,148 @@
+---
+title: "HW3_Venkataraman Balasubramanian"
+author: "Venkataraman Balasubramanian"
+date: "3/2/2022"
+output: html_document
+
+knit: (function(input_file, encoding) {
+  out_dir <- 'docs';
+  rmarkdown::render(input_file,
+ encoding=encoding,
+ output_file=file.path(dirname(input_file), out_dir, 'index.html'))})
+ 
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This analysis is inspired by the "Power of Stats" TED talk by the best story teller the world has seen "Hans Rosling". The goal is to analyze the crime data from the city of San Fransisco and determine the following -
+
+- How overall crime is spread across the city
+
+- How different crime types are spread across the city
+
+- Distribution of crime over weekdays vs weekends   
+
+This will help the police department of San Fransisco with staffing their team and man the sections accordingly so that the crime rates can be brought down  
+
+The dataset is obtained from a kaggle competition. For the purpose of this assignment we are taking a subset of the dataset from the kaggle competion ie only Jan 2015 crime data  
+
+We will be using the following R packages - data.table, ggplot2, lubridate, plotly, dplyr and ggmap  
+
+
+### Loading the required packages
+```{r warning = FALSE, message=FALSE}
+library(data.table)
+library(ggplot2)
+library(lubridate)
+library(plotly)
+library(dplyr)
+library(ggmap)
+```
+
+
+### Reading the data  
+```{r warning = FALSE, message=FALSE}
+sf_crime = fread("sf_crime.csv")
+
+```
+### Plotting the base map of San Fransisco city
+```{r warning = FALSE, message=FALSE}
+#map of SFO
+
+sf = get_stamenmap(bbox = c(left = -122.5164, bottom = 37.7066, right = -122.3554, top = 37.8103), maptype = c("toner-lite"), zoom = 13)
+
+map = ggmap(sf)
+
+map + geom_point(data = sample_n(sf_crime, 500), aes(x = X, y = Y))
+
+```
+```{r warning = FALSE, message=FALSE}
+#Total crime map
+
+BinnedCounts = sf_crime[, .(.N), by = .(Long = round(X,2), Lat = round(Y,2))][order(N, decreasing = T)]
+
+map + 
+  geom_point(data = BinnedCounts, aes(x = Long, y = Lat, color = N, size=N)) + 
+  scale_colour_gradient(name = '# Total Crime', low="blue", high="red") + 
+  scale_size(name = '# Total Crime', range = c(2,15)) 
+
+
+```  
+
+It is very evident that the overall crime is higher on the north east portion of the city  
+
+```{r warning = FALSE, message=FALSE}
+#Crime density map
+
+map + 
+  stat_density2d( data = sample_frac(sf_crime, 0.2), aes(x = X, y = Y, fill = ..level.., alpha = ..level..), size = 1, bins = 50, geom = 'polygon') +
+  scale_fill_gradient('Crime\nDensity', low = 'blue', high = 'orange') +
+  scale_alpha(range = c(.2, .3), guide = FALSE) +
+  guides(fill = guide_colorbar(barwidth = 1.5, barheight = 10))
+
+```  
+
+The density distribution of the crime is in alignment what we observed on the overall crime in the city  
+
+```{r warning = FALSE, message=FALSE}
+#Most common crime types
+
+f = sf_crime[, .N, by = .(PdDistrict, Category)][order(-PdDistrict, N, decreasing = T)]
+
+location = sf_crime[, j = .(Lat = mean(X), Long = mean(Y)), by = .(PdDistrict)]
+
+f1 = f[j = .(Category[1], N[1]) , by = .(PdDistrict)]
+
+setnames(f1, old = c('V1', 'V2'), new = c('Category', 'N')) 
+
+f1 = merge(f1, location, by = 'PdDistrict')
+
+map +
+  geom_point(data = f1, aes(x = Lat, y = Long, size = N, color = Category)) + 
+  scale_size(name = '# Total Crime', range = c(3,12)) +
+  ggtitle('Most Common Crime Types')
+
+
+```  
+
+The most common offense type is "Larceny/ Theft" followed by "Other Offenses"  
+
+```{r warning = FALSE, message=FALSE}
+#Most common crime by days of the week
+
+bbox = data.table(left = -122.5164, bottom = 37.7066, right = -122.3554, top = 37.8103)
+x_length = abs(bbox[, left - right])/30
+y_length = abs(bbox[, bottom - top])/30
+sf_crime[, LatBinned := round(Y/y_length)*y_length]
+sf_crime[, LongBinned := round(X/x_length)*x_length]
+
+f = sf_crime[i = Category %in% c('LARCENY/THEFT'), .N, keyby = .(DayOfWeek, LatBinned, LongBinned)][
+  order(LatBinned, LongBinned, N, decreasing = T)]
+
+f_weekday1= f[i = DayOfWeek != 'Sunday']
+f_weekday2= f[i = DayOfWeek != 'Saturday']
+f_weekday = rbind(f_weekday1,f_weekday2)
+
+f_weekend1= f[i = DayOfWeek == 'Sunday']
+f_weekend2= f[i = DayOfWeek == 'Saturday']
+f_weekend = rbind(f_weekend1,f_weekend2)
+
+map + 
+  geom_tile(data = f_weekend, aes(x = LongBinned, y = LatBinned, alpha = N), fill = 'red') +
+  ggtitle('Drug Crime Weekday') 
+
+map + 
+  geom_tile(data = f_weekday, aes(x = LongBinned, y = LatBinned, alpha = N), fill = 'red') +
+  ggtitle('Drug Crime Weekend') 
+```  
+
+Its very clear that the theft increased over the weekend when compared to weekdays but on both weekdays and weekends they are concentrated in the north east part of the city.  
+
+The data from Jan 2015 suggests that staffing the police in the north east part of the city may have assisted with reduced crime. Moreover it may help with extra staffing over the weekend as the number of crimes over the weekend is higher than weekdays.  
+
+This data could have also been analyzed using traditional visualization methods (like bar charts, scatterplots etc..) but depicting them on map definitely helps with location/ sites in the city that would need attention to not only bring down crimes but a safe society  
+
